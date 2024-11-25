@@ -13,6 +13,8 @@
 
 `include "VX_define.vh"
 
+// In local memory switch, we do not want to redirect the local memory request to local memory but want it to stay global
+// Address should always be "global" and it should never go to a local memory if, in fact, there should be a local memory if at all
 module VX_lmem_switch import VX_gpu_pkg::*; #(
     parameter REQ0_OUT_BUF = 0,
     parameter REQ1_OUT_BUF = 0,
@@ -25,22 +27,22 @@ module VX_lmem_switch import VX_gpu_pkg::*; #(
     VX_lsu_mem_if.master    global_out_if,
     VX_lsu_mem_if.master    local_out_if
 );
+    `UNUSED_VAR(REQ1_OUT_BUF);
     localparam REQ_DATAW = `NUM_LSU_LANES + 1 + `NUM_LSU_LANES * (LSU_WORD_SIZE + LSU_ADDR_WIDTH + `MEM_REQ_FLAGS_WIDTH + LSU_WORD_SIZE * 8) + LSU_TAG_WIDTH;
     localparam RSP_DATAW = `NUM_LSU_LANES + `NUM_LSU_LANES * (LSU_WORD_SIZE * 8) + LSU_TAG_WIDTH;
 
-    wire [`NUM_LSU_LANES-1:0] is_addr_local_mask;
+    // wire [`NUM_LSU_LANES-1:0] is_addr_local_mask;
     wire req_global_ready;
-    wire req_local_ready;
+    // wire req_local_ready;
 
-    for (genvar i = 0; i < `NUM_LSU_LANES; ++i) begin : g_is_addr_local_mask
-        assign is_addr_local_mask[i] = lsu_in_if.req_data.flags[i][`MEM_REQ_FLAG_LOCAL];
-    end
+    // for (genvar i = 0; i < `NUM_LSU_LANES; ++i) begin : g_is_addr_local_mask
+    //     assign is_addr_local_mask[i] = lsu_in_if.req_data.flags[i][`MEM_REQ_FLAG_LOCAL];
+    // end
 
-    wire is_addr_global = | (lsu_in_if.req_data.mask & ~is_addr_local_mask);
-    wire is_addr_local  = | (lsu_in_if.req_data.mask & is_addr_local_mask);
+    // wire is_addr_global = | (lsu_in_if.req_data.mask & ~is_addr_local_mask);
+    // wire is_addr_local  = | (lsu_in_if.req_data.mask & is_addr_local_mask);
 
-    assign lsu_in_if.req_ready = (req_global_ready && is_addr_global)
-                              || (req_local_ready && is_addr_local);
+    assign lsu_in_if.req_ready = (req_global_ready);
 
     VX_elastic_buffer #(
         .DATAW   (REQ_DATAW),
@@ -49,14 +51,14 @@ module VX_lmem_switch import VX_gpu_pkg::*; #(
     ) req_global_buf (
         .clk       (clk),
         .reset     (reset),
-        .valid_in  (lsu_in_if.req_valid && is_addr_global),
+        .valid_in  (lsu_in_if.req_valid), // doesn't need to check for whether the request is local 
         .data_in   ({
-            lsu_in_if.req_data.mask & ~is_addr_local_mask,
+            lsu_in_if.req_data.mask, // doesn't need to check for whether the request is local 
             lsu_in_if.req_data.rw,
             lsu_in_if.req_data.addr,
             lsu_in_if.req_data.data,
             lsu_in_if.req_data.byteen,
-            lsu_in_if.req_data.flags,
+            lsu_in_if.req_data.flags, // this should contain the local bit 
             lsu_in_if.req_data.tag
         }),
         .ready_in  (req_global_ready),
@@ -73,39 +75,40 @@ module VX_lmem_switch import VX_gpu_pkg::*; #(
         .ready_out (global_out_if.req_ready)
     );
 
-    VX_elastic_buffer #(
-        .DATAW   (REQ_DATAW),
-        .SIZE    (`TO_OUT_BUF_SIZE(REQ1_OUT_BUF)),
-        .OUT_REG (`TO_OUT_BUF_REG(REQ1_OUT_BUF))
-    ) req_local_buf (
-        .clk       (clk),
-        .reset     (reset),
-        .valid_in  (lsu_in_if.req_valid && is_addr_local),
-        .data_in   ({
-            lsu_in_if.req_data.mask & is_addr_local_mask,
-            lsu_in_if.req_data.rw,
-            lsu_in_if.req_data.addr,
-            lsu_in_if.req_data.data,
-            lsu_in_if.req_data.byteen,
-            lsu_in_if.req_data.flags,
-            lsu_in_if.req_data.tag
-        }),
-        .ready_in  (req_local_ready),
-        .valid_out (local_out_if.req_valid),
-        .data_out  ({
-            local_out_if.req_data.mask,
-            local_out_if.req_data.rw,
-            local_out_if.req_data.addr,
-            local_out_if.req_data.data,
-            local_out_if.req_data.byteen,
-            local_out_if.req_data.flags,
-            local_out_if.req_data.tag
-        }),
-        .ready_out (local_out_if.req_ready)
-    );
+    // We don't need this anymore since there is no physical local memory 
+    // VX_elastic_buffer #(
+    //     .DATAW   (REQ_DATAW),
+    //     .SIZE    (`TO_OUT_BUF_SIZE(REQ1_OUT_BUF)),
+    //     .OUT_REG (`TO_OUT_BUF_REG(REQ1_OUT_BUF))
+    // ) req_local_buf (
+    //     .clk       (clk),
+    //     .reset     (reset),
+    //     .valid_in  (lsu_in_if.req_valid && is_addr_local),
+    //     .data_in   ({
+    //         lsu_in_if.req_data.mask & is_addr_local_mask,
+    //         lsu_in_if.req_data.rw,
+    //         lsu_in_if.req_data.addr,
+    //         lsu_in_if.req_data.data,
+    //         lsu_in_if.req_data.byteen,
+    //         lsu_in_if.req_data.flags,
+    //         lsu_in_if.req_data.tag
+    //     }),
+    //     .ready_in  (req_local_ready),
+    //     .valid_out (local_out_if.req_valid),
+    //     .data_out  ({
+    //         local_out_if.req_data.mask,
+    //         local_out_if.req_data.rw,
+    //         local_out_if.req_data.addr,
+    //         local_out_if.req_data.data,
+    //         local_out_if.req_data.byteen,
+    //         local_out_if.req_data.flags,
+    //         local_out_if.req_data.tag
+    //     }),
+    //     .ready_out (local_out_if.req_ready)
+    // );
 
     VX_stream_arb #(
-        .NUM_INPUTS (2),
+        .NUM_INPUTS (1),
         .DATAW      (RSP_DATAW),
         .ARBITER    (ARBITER),
         .OUT_BUF    (RSP_OUT_BUF)
@@ -113,15 +116,12 @@ module VX_lmem_switch import VX_gpu_pkg::*; #(
         .clk       (clk),
         .reset     (reset),
         .valid_in  ({
-            local_out_if.rsp_valid,
             global_out_if.rsp_valid
         }),
         .ready_in  ({
-            local_out_if.rsp_ready,
             global_out_if.rsp_ready
         }),
         .data_in   ({
-            local_out_if.rsp_data,
             global_out_if.rsp_data
         }),
         .data_out  (lsu_in_if.rsp_data),

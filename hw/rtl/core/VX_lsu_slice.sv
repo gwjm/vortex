@@ -62,6 +62,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_full_addr
         assign full_addr[i] = execute_if.data.rs1_data[i] + `SEXT(`XLEN, execute_if.data.op_args.lsu.offset);
     end
+    wire [NUM_LANES-1:0][`XLEN-1:0] updated_full_addr;
 
     // address type calculation
 
@@ -78,6 +79,10 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         wire [MEM_ADDRW-1:0] lmem_addr_start = MEM_ADDRW'(`XLEN'(`LMEM_BASE_ADDR) >> MEM_ASHIFT);
         wire [MEM_ADDRW-1:0] lmem_addr_end = MEM_ADDRW'((`XLEN'(`LMEM_BASE_ADDR) + `XLEN'(1 << `LMEM_LOG_SIZE)) >> MEM_ASHIFT);
         assign mem_req_flags[i][`MEM_REQ_FLAG_LOCAL] = (block_addr >= lmem_addr_start) && (block_addr < lmem_addr_end);
+        // if it is a local memory address, the get the relative address instead
+        assign updated_full_addr[i] = ((block_addr >= lmem_addr_start) && (block_addr < lmem_addr_end)) ? full_addr[i] - `LMEM_BASE_ADDR : full_addr[i];
+    `else
+        assign updated_full_addr[i] = full_addr[i];
     `endif
     end
 
@@ -150,8 +155,8 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     wire [NUM_LANES-1:0][REQ_ASHIFT-1:0] req_align;
 
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_mem_req_addr
-        assign req_align[i] = full_addr[i][REQ_ASHIFT-1:0];
-        assign mem_req_addr[i] = full_addr[i][`MEM_ADDR_WIDTH-1:REQ_ASHIFT];
+        assign req_align[i] = updated_full_addr[i][REQ_ASHIFT-1:0];
+        assign mem_req_addr[i] = updated_full_addr[i][`MEM_ADDR_WIDTH-1:REQ_ASHIFT];
     end
 
     // byte enable formatting
@@ -185,9 +190,9 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
     // memory misalignment not supported!
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_missalign
         wire lsu_req_fire = execute_if.valid && execute_if.ready;
-        `RUNTIME_ASSERT((~lsu_req_fire || ~execute_if.data.tmask[i] || req_is_fence || (full_addr[i] % (1 << `INST_LSU_WSIZE(execute_if.data.op_type))) == 0),
+        `RUNTIME_ASSERT((~lsu_req_fire || ~execute_if.data.tmask[i] || req_is_fence || (updated_full_addr[i] % (1 << `INST_LSU_WSIZE(execute_if.data.op_type))) == 0),
             ("%t: misaligned memory access, wid=%0d, PC=0x%0h, addr=0x%0h, wsize=%0d! (#%0d)",
-                $time, execute_if.data.wid, {execute_if.data.PC, 1'b0}, full_addr[i], `INST_LSU_WSIZE(execute_if.data.op_type), execute_if.data.uuid))
+                $time, execute_if.data.wid, {execute_if.data.PC, 1'b0}, updated_full_addr[i], `INST_LSU_WSIZE(execute_if.data.op_type), execute_if.data.uuid))
     end
 
     // store data formatting
@@ -509,7 +514,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
         if (mem_req_fire) begin
             if (mem_req_rw) begin
                 `TRACE(2, ("%t: %s Wr Req: wid=%0d, PC=0x%0h, tmask=%b, addr=", $time, INSTANCE_ID, execute_if.data.wid, {execute_if.data.PC, 1'b0}, mem_req_mask))
-                `TRACE_ARRAY1D(2, "0x%h", full_addr, NUM_LANES)
+                `TRACE_ARRAY1D(2, "0x%h", updated_full_addr, NUM_LANES)
                 `TRACE(2, (", flags="))
                 `TRACE_ARRAY1D(2, "%b", mem_req_flags, NUM_LANES)
                 `TRACE(2, (", byteen=0x%0h, data=", mem_req_byteen))
@@ -517,7 +522,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
                 `TRACE(2, (", sop=%b, eop=%b, tag=0x%0h (#%0d)\n", execute_if.data.sop, execute_if.data.eop, mem_req_tag, execute_if.data.uuid))
             end else begin
                 `TRACE(2, ("%t: %s Rd Req: wid=%0d, PC=0x%0h, tmask=%b, addr=", $time, INSTANCE_ID, execute_if.data.wid, {execute_if.data.PC, 1'b0}, mem_req_mask))
-                `TRACE_ARRAY1D(2, "0x%h", full_addr, NUM_LANES)
+                `TRACE_ARRAY1D(2, "0x%h", updated_full_addr, NUM_LANES)
                 `TRACE(2, (", flags="))
                 `TRACE_ARRAY1D(2, "%b", mem_req_flags, NUM_LANES)
                 `TRACE(2, (", byteen=0x%0h, rd=%0d, sop=%b, eop=%b, tag=0x%0h (#%0d)\n", mem_req_byteen, execute_if.data.rd, execute_if.data.sop, execute_if.data.eop, mem_req_tag, execute_if.data.uuid))
@@ -548,7 +553,7 @@ module VX_lsu_slice import VX_gpu_pkg::*; #(
             mem_rsp_fire
         }, {
             mem_req_rw,
-            full_addr,
+            updated_full_addr,
             mem_req_byteen,
             mem_req_data,
             execute_if.data.uuid,

@@ -598,8 +598,14 @@
 `endif
 
 // Cache Size
+// double the size to handle 14 log size for share mem
+// keep this as the same and we introduce 
 `ifndef DCACHE_SIZE
 `define DCACHE_SIZE 16384
+`endif
+
+`ifndef UNIFIED_LMEN_SIZE
+`define UNIFIED_LMEN_SIZE 16384
 `endif
 
 // Number of Banks
@@ -659,6 +665,8 @@
     `define LMEM_ENABLED   0
     `define LMEM_NUM_BANKS 1
 `endif
+
+`define UNIFIED_LMEM 
 
 // Number of Banks
 `ifndef LMEM_NUM_BANKS

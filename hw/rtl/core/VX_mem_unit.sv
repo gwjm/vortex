@@ -34,6 +34,7 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
 
 `ifdef LMEM_ENABLE
 
+`ifndef UNIFIED_LMEM
     `STATIC_ASSERT(`IS_DIVISBLE((1 << `LMEM_LOG_SIZE), `MEM_BLOCK_SIZE), ("invalid parameter"))
     `STATIC_ASSERT(0 == (`LMEM_BASE_ADDR % (1 << `LMEM_LOG_SIZE)), ("invalid parameter"))
 
@@ -44,7 +45,9 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         .DATA_SIZE (LSU_WORD_SIZE),
         .TAG_WIDTH (LSU_TAG_WIDTH)
     ) lsu_lmem_if[`NUM_LSU_BLOCKS]();
-
+    
+    // It seems like we don't need the switch at all
+    // We need to connect lsu_mem_if directly to lsu_dcache_if, which is what the lmem_switch is doing
     for (genvar i = 0; i < `NUM_LSU_BLOCKS; ++i) begin : g_lmem_switches
         VX_lmem_switch #(
             .REQ0_OUT_BUF (3),
@@ -91,6 +94,7 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         end
     end
 
+    // We don't need this physical local memory anymore
     VX_local_mem #(
         .INSTANCE_ID(`SFORMATF(("%s-lmem", INSTANCE_ID))),
         .SIZE       (1 << `LMEM_LOG_SIZE),
@@ -109,6 +113,14 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
     `endif
         .mem_bus_if (lmem_bus_if)
     );
+`else
+    `ifdef PERF_ENABLE
+        assign lmem_perf = '0;
+    `endif
+    for (genvar i = 0; i < `NUM_LSU_BLOCKS; ++i) begin : g_lsu_dcache_if
+        `ASSIGN_VX_MEM_BUS_IF (lsu_dcache_if[i], lsu_mem_if[i]);
+    end
+`endif
 
 `else
 

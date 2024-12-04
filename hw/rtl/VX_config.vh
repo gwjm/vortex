@@ -668,6 +668,12 @@
 
 `define UNIFIED_LMEM 
 
+`ifdef LMEM_ENABLE
+`ifndef UNIFIED_LMEM
+`define SEP_LMEM
+`endif 
+`endif
+
 // Number of Banks
 `ifndef LMEM_NUM_BANKS
 `define LMEM_NUM_BANKS `NUM_LSU_LANES

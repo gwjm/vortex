@@ -20,11 +20,11 @@
 
 `define CS_WORD_WIDTH           (8 * WORD_SIZE)
 `define CS_LINE_WIDTH           (8 * LINE_SIZE)
-`define CS_BANK_SIZE            (CACHE_SIZE / NUM_BANKS)
+`define CS_BANK_SIZE            (CACHE_SIZE / NUM_BANKS) // this 
 `define CS_WAY_SEL_BITS         `CLOG2(NUM_WAYS)
 `define CS_WAY_SEL_WIDTH        `UP(`CS_WAY_SEL_BITS)
 
-`define CS_LINES_PER_BANK       (`CS_BANK_SIZE / (LINE_SIZE * NUM_WAYS))
+`define CS_LINES_PER_BANK       (`CS_BANK_SIZE / (LINE_SIZE * NUM_WAYS)) //this 
 `define CS_WORDS_PER_LINE       (LINE_SIZE / WORD_SIZE)
 
 `define CS_WORD_ADDR_WIDTH      (`MEM_ADDR_WIDTH-`CLOG2(WORD_SIZE))
@@ -42,7 +42,7 @@
 `define CS_BANK_SEL_ADDR_END    (`CS_BANK_SEL_ADDR_START+`CS_BANK_SEL_BITS-1)
 
 // Line select
-`define CS_LINE_SEL_BITS        `CLOG2(`CS_LINES_PER_BANK)
+`define CS_LINE_SEL_BITS        `CLOG2(`CS_LINES_PER_BANK) // this 
 `define CS_LINE_SEL_ADDR_START  (1+`CS_BANK_SEL_ADDR_END)
 `define CS_LINE_SEL_ADDR_END    (`CS_LINE_SEL_ADDR_START+`CS_LINE_SEL_BITS-1)
 
@@ -53,6 +53,17 @@
 
 `define CS_LINE_ADDR_TAG(x)     x[`CS_LINE_ADDR_WIDTH-1 : `CS_LINE_SEL_BITS]
 
+// Unified shared memory in cache
+// this is the number of lines that belongs to dcache, lines behind are for lmem
+`define CS_LMEM_BASE_OFFSET     `CS_LINES_PER_BANK 
+// unified shared memory size per bank
+`define CS_LMEM_BANK_SIZE       (`UNIFIED_LMEN_SIZE / NUM_BANKS)
+// unified shared memory lines per bank
+`define CS_LMEM_LINES_PER_BANK  (`CS_LMEM_BANK_SIZE / (LINE_SIZE * NUM_WAYS))
+// unified shared memory line selection bit
+`define CS_LMEM_LINE_SEL_BITS   `CLOG2(`CS_LMEM_LINES_PER_BANK)
+// unified shared memory way selection bit
+`define CS_LMEM_WAY_SEL_BITS    `CLOG2(NUM_WAYS)
 ///////////////////////////////////////////////////////////////////////////////
 
 `define CS_LINE_TO_MEM_ADDR(x, i)  {x, `CS_BANK_SEL_BITS'(i)}

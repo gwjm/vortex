@@ -88,7 +88,7 @@ module VX_cache_bank #(
     input wire [`CS_WORD_WIDTH-1:0]     core_req_data,  // data to be written
     input wire [TAG_WIDTH-1:0]          core_req_tag,   // identifier of the request (request id)
     input wire [REQ_SEL_WIDTH-1:0]      core_req_idx,   // index of the request in the core request array
-    input wire [`UP(FLAGS_WIDTH)-1:0]   core_req_flags,
+    input wire [`UP(FLAGS_WIDTH)-1:0]   core_req_flags, // this has our shared bit 
     output wire                         core_req_ready,
 
     // Core Response
@@ -121,6 +121,7 @@ module VX_cache_bank #(
 );
 
     localparam PIPELINE_STAGES = 2;
+    // put the line select bit for the 
 
 `IGNORE_UNUSED_BEGIN
     wire [`UP(UUID_WIDTH)-1:0] req_uuid_sel, req_uuid_st0, req_uuid_st1;
@@ -173,6 +174,7 @@ module VX_cache_bank #(
     wire                            mshr_pending_st0, mshr_pending_st1;
     wire [MSHR_ADDR_WIDTH-1:0]      mshr_previd_st0, mshr_previd_st1;
     wire                            mshr_empty;
+    wire                            is_local_mem;
 
     wire flush_valid;
     wire init_valid;
@@ -183,6 +185,7 @@ module VX_cache_bank #(
     // ensure we have no pending memory request in the bank
     wire no_pending_req = ~valid_st0 && ~valid_st1 && mreq_queue_empty;
 
+    // we need to prevent the flush unit from flushing the lmem
     VX_bank_flush #(
         .BANK_ID    (BANK_ID),
         .CACHE_SIZE (CACHE_SIZE),
@@ -262,7 +265,14 @@ module VX_cache_bank #(
         `UNUSED_VAR (flush_uuid)
         assign flush_tag = '0;
     end
-
+    
+    // Check to see if this is icache 
+    if (FLAGS_WIDTH > 0) begin : g_dcache
+        assign is_local_mem  = core_req_flags[`MEM_REQ_FLAG_LOCAL];
+    end else begin : g_icache
+        assign is_local_mem = 0;
+    end
+    
     assign valid_sel   = init_fire || replay_fire || mem_rsp_fire || flush_fire || core_req_fire;
     assign rw_sel      = replay_valid ? replay_rw : core_req_rw;
     assign byteen_sel  = replay_valid ? replay_byteen : core_req_byteen;
@@ -332,7 +342,8 @@ module VX_cache_bank #(
     wire do_read_st1  = valid_st1 && is_read_st1;
     wire do_write_st1 = valid_st1 && is_write_st1;
 
-    assign line_idx_st0 = addr_st0[`CS_LINE_SEL_BITS-1:0];
+    // if it is local mem we want to add our base set
+    assign line_idx_st0 = (is_local_mem) ? addr_st0[`CS_LINE_SEL_BITS-1:0] + `CS_LINE_SEL_BITS'`CS_LMEM_BASE_OFFSET : addr_st0[`CS_LINE_SEL_BITS-1:0];
     assign line_tag_st0 = `CS_LINE_ADDR_TAG(addr_st0);
 
     assign write_word_st0 = data_st0[`CS_WORD_WIDTH-1:0];
@@ -363,6 +374,8 @@ module VX_cache_bank #(
 
     assign evict_way_st0 = is_fill_st0 ? victim_way_st0 : flush_way_st0;
 
+    wire [NUM_WAYS-1:0] temp_tag_matches_st0;
+
     VX_cache_tags #(
         .CACHE_SIZE (CACHE_SIZE),
         .LINE_SIZE  (LINE_SIZE),
@@ -383,11 +396,15 @@ module VX_cache_bank #(
         .line_tag   (line_tag_st0),
         .evict_way  (evict_way_st0),
         // outputs
-        .tag_matches(tag_matches_st0),
-        .evict_dirty(is_dirty_st0),
+        .tag_matches(temp_tag_matches_st0),
+        .evict_dirty(is_dirty_st0),  // should we set dirty bit to 0 if it is lmem lines?
         .evict_tag  (evict_tag_st0)
     );
 
+    wire [`CS_WAY_SEL_WIDTH-1:0] local_way_idx;
+    assign local_way_idx = addr_st0[`CS_LMEM_WAY_SEL_BITS+`CS_LMEM_LINE_SEL_BITS-1:`CS_LMEM_LINE_SEL_BITS]; 
+    assign tag_matches_st0 = (is_local_mem) ? (4'b1 << local_way_idx) : temp_tag_matches_st0;
+    // assigning a way index from the address to be the bits followed by the bits that maps to the lines
     wire [`CS_WAY_SEL_WIDTH-1:0] hit_idx_st0;
     VX_onehot_encoder #(
         .N (NUM_WAYS)
@@ -398,7 +415,8 @@ module VX_cache_bank #(
     );
 
     assign way_idx_st0 = is_creq_st0 ? hit_idx_st0 : evict_way_st0;
-    assign is_hit_st0 = (| tag_matches_st0);
+    // lmem request always a hit
+    assign is_hit_st0 = is_local_mem ? '1 : (| tag_matches_st0);
 
     wire [MSHR_ADDR_WIDTH-1:0] mshr_alloc_id_st0;
     assign mshr_id_st0 = is_replay_st0 ? replay_id_st0 : mshr_alloc_id_st0;

@@ -29,7 +29,9 @@ module VX_cache_data #(
     // Enable cache writeback
     parameter WRITEBACK         = 0,
     // Enable dirty bytes on writeback
-    parameter DIRTY_BYTES       = 0
+    parameter DIRTY_BYTES       = 0,
+    // Bit width of line idx 
+    parameter LINE_SEL_BITS     = `CS_LINE_SEL_BITS
 ) (
     input wire                          clk,
     input wire                          reset,
@@ -40,7 +42,7 @@ module VX_cache_data #(
     input wire                          flush,
     input wire                          read,
     input wire                          write,
-    input wire [`CS_LINE_SEL_BITS-1:0]  line_idx,
+    input wire [LINE_SEL_BITS-1:0]      line_idx,
     input wire [`CS_WAY_SEL_WIDTH-1:0]  evict_way,
     input wire [NUM_WAYS-1:0]           tag_matches,
     input wire [`CS_WORDS_PER_LINE-1:0][`CS_WORD_WIDTH-1:0] fill_data,
@@ -128,7 +130,11 @@ module VX_cache_data #(
 
         VX_sp_ram #(
             .DATAW (NUM_WAYS * `CS_LINE_WIDTH),
+`ifdef UNIFIED_LMEM
+            .SIZE  (`CS_LINES_PER_BANK+`CS_LMEM_LINES_PER_BANK), // to increase the cache data size to contain the lmem
+`else
             .SIZE  (`CS_LINES_PER_BANK),
+`endif
             .WRENW (NUM_WAYS * LINE_SIZE),
             .OUT_REG (1),
             .RDW_MODE ("R")

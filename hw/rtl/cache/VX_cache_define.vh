@@ -64,6 +64,8 @@
 `define CS_LMEM_LINE_SEL_BITS   `CLOG2(`CS_LMEM_LINES_PER_BANK)
 // unified shared memory way selection bit
 `define CS_LMEM_WAY_SEL_BITS    `CLOG2(NUM_WAYS)
+// unified shared memory line selection together
+`define CS_UNIFIED_LINE_SEL_BITS `CLOG2(`CS_LINES_PER_BANK+`CS_LMEM_LINES_PER_BANK)
 ///////////////////////////////////////////////////////////////////////////////
 
 `define CS_LINE_TO_MEM_ADDR(x, i)  {x, `CS_BANK_SEL_BITS'(i)}

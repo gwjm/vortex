@@ -121,6 +121,13 @@ module VX_cache_bank #(
 );
 
     localparam PIPELINE_STAGES = 2;
+    localparam ICACHE_SEL_BIT = `CS_LINE_SEL_BITS;
+`ifdef UNIFIED_LMEM
+    localparam DCACHE_SEL_BIT = `CS_LMEM_LINE_SEL_BITS;
+    localparam LMEM_BIT_DIFFERENCE = `CS_LMEM_LINE_SEL_BITS - `CS_LINE_SEL_BITS;
+`else
+    localparam DCACHE_SEL_BIT = `CS_LINE_SEL_BITS;
+`endif 
     // put the line select bit for the 
 
 `IGNORE_UNUSED_BEGIN
@@ -266,12 +273,14 @@ module VX_cache_bank #(
         assign flush_tag = '0;
     end
     
+`ifdef UNIFIED_LMEM
     // Check to see if this is icache 
     if (FLAGS_WIDTH > 0) begin : g_dcache
         assign is_local_mem  = core_req_flags[`MEM_REQ_FLAG_LOCAL];
     end else begin : g_icache
         assign is_local_mem = 0;
     end
+`endif 
     
     assign valid_sel   = init_fire || replay_fire || mem_rsp_fire || flush_fire || core_req_fire;
     assign rw_sel      = replay_valid ? replay_rw : core_req_rw;
@@ -343,7 +352,7 @@ module VX_cache_bank #(
     wire do_write_st1 = valid_st1 && is_write_st1;
 
     // if it is local mem we want to add our base set
-    assign line_idx_st0 = (is_local_mem) ? addr_st0[`CS_LINE_SEL_BITS-1:0] + `CS_LINE_SEL_BITS'`CS_LMEM_BASE_OFFSET : addr_st0[`CS_LINE_SEL_BITS-1:0];
+    assign line_idx_st0 = addr_st0[`CS_LINE_SEL_BITS-1:0];
     assign line_tag_st0 = `CS_LINE_ADDR_TAG(addr_st0);
 
     assign write_word_st0 = data_st0[`CS_WORD_WIDTH-1:0];
@@ -403,7 +412,7 @@ module VX_cache_bank #(
 
     wire [`CS_WAY_SEL_WIDTH-1:0] local_way_idx;
     assign local_way_idx = addr_st0[`CS_LMEM_WAY_SEL_BITS+`CS_LMEM_LINE_SEL_BITS-1:`CS_LMEM_LINE_SEL_BITS]; 
-    assign tag_matches_st0 = (is_local_mem) ? (4'b1 << local_way_idx) : temp_tag_matches_st0;
+    assign tag_matches_st0 = (is_local_mem) ? (4'b1 << local_way_idx) : temp_tag_matches_st0; // how to pass a parameter here?
     // assigning a way index from the address to be the bits followed by the bits that maps to the lines
     wire [`CS_WAY_SEL_WIDTH-1:0] hit_idx_st0;
     VX_onehot_encoder #(
@@ -449,37 +458,87 @@ module VX_cache_bank #(
     wire[`CS_WORDS_PER_LINE-1:0][`CS_WORD_WIDTH-1:0] read_data_st1;
     wire [LINE_SIZE-1:0] evict_byteen_st1;
 
-    VX_cache_data #(
-        .CACHE_SIZE   (CACHE_SIZE),
-        .LINE_SIZE    (LINE_SIZE),
-        .NUM_BANKS    (NUM_BANKS),
-        .NUM_WAYS     (NUM_WAYS),
-        .WORD_SIZE    (WORD_SIZE),
-        .WRITE_ENABLE (WRITE_ENABLE),
-        .WRITEBACK    (WRITEBACK),
-        .DIRTY_BYTES  (DIRTY_BYTES)
-    ) cache_data (
-        .clk        (clk),
-        .reset      (reset),
-        .stall      (pipe_stall),
-        // inputs
-        .init       (do_init_st0),
-        .fill       (do_fill_st0 && ~pipe_stall),
-        .flush      (do_flush_st0 && ~pipe_stall),
-        .read       (do_read_st0 && ~pipe_stall),
-        .write      (do_write_st0 && ~pipe_stall),
-        .evict_way  (evict_way_st0),
-        .tag_matches(tag_matches_st0),
-        .line_idx   (line_idx_st0),
-        .fill_data  (data_st0),
-        .write_word (write_word_st0),
-        .word_idx   (word_idx_st0),
-        .write_byteen(byteen_st0),
-        .way_idx_r  (way_idx_st1),
-        // outputs
-        .read_data  (read_data_st1),
-        .evict_byteen(evict_byteen_st1)
-    );
+    
+    if (FLAGS_WIDTH > 0) begin : g_dcache
+`ifdef UNIFIED_LMEM
+        wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] lmem_line_idx_st0;
+        assign lmem_line_idx_st0 = addr_st0[`CS_LMEM_LINE_SEL_BITS-1:0] + `CS_LMEM_LINE_SEL_BITS'`CS_LMEM_BASE_OFFSET;
+        wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] line_idx_data;
+        // we need to expand the line_idx_st0 since it only handles the dcache
+        assign line_idx_data = (is_local_mem) ? lmem_line_idx_st0 : {{1'b0},{line_idx_st0}};
+`else
+        wire [`CS_LINE_SEL_BITS-1:0] line_idx_data;
+        assign line_idx_data = line_idx_st0;
+`endif
+
+        VX_cache_data #(
+            .CACHE_SIZE   (CACHE_SIZE),
+            .LINE_SIZE    (LINE_SIZE),
+            .NUM_BANKS    (NUM_BANKS),
+            .NUM_WAYS     (NUM_WAYS),
+            .WORD_SIZE    (WORD_SIZE),
+            .WRITE_ENABLE (WRITE_ENABLE),
+            .WRITEBACK    (WRITEBACK),
+            .DIRTY_BYTES  (DIRTY_BYTES),
+            .LINE_SEL_BITS (DCACHE_SEL_BIT)
+        ) cache_data (
+            .clk        (clk),
+            .reset      (reset),
+            .stall      (pipe_stall),
+            // inputs
+            .init       (do_init_st0),
+            .fill       (do_fill_st0 && ~pipe_stall),
+            .flush      (do_flush_st0 && ~pipe_stall),
+            .read       (do_read_st0 && ~pipe_stall),
+            .write      (do_write_st0 && ~pipe_stall),
+            .evict_way  (evict_way_st0),
+            .tag_matches(tag_matches_st0),
+            .line_idx   (line_idx_data),
+            .fill_data  (data_st0),
+            .write_word (write_word_st0),
+            .word_idx   (word_idx_st0),
+            .write_byteen(byteen_st0),
+            .way_idx_r  (way_idx_st1),
+            // outputs
+            .read_data  (read_data_st1),
+            .evict_byteen(evict_byteen_st1)
+        );
+    end else begin : g_icache
+        wire [`CS_LINE_SEL_BITS-1:0] line_idx_data;
+        assign line_idx_data = line_idx_st0;
+        VX_cache_data #(
+            .CACHE_SIZE   (CACHE_SIZE),
+            .LINE_SIZE    (LINE_SIZE),
+            .NUM_BANKS    (NUM_BANKS),
+            .NUM_WAYS     (NUM_WAYS),
+            .WORD_SIZE    (WORD_SIZE),
+            .WRITE_ENABLE (WRITE_ENABLE),
+            .WRITEBACK    (WRITEBACK),
+            .DIRTY_BYTES  (DIRTY_BYTES),
+            .LINE_SEL_BITS (ICACHE_SEL_BIT)
+        ) cache_data (
+            .clk        (clk),
+            .reset      (reset),
+            .stall      (pipe_stall),
+            // inputs
+            .init       (do_init_st0),
+            .fill       (do_fill_st0 && ~pipe_stall),
+            .flush      (do_flush_st0 && ~pipe_stall),
+            .read       (do_read_st0 && ~pipe_stall),
+            .write      (do_write_st0 && ~pipe_stall),
+            .evict_way  (evict_way_st0),
+            .tag_matches(tag_matches_st0),
+            .line_idx   (line_idx_data),
+            .fill_data  (data_st0),
+            .write_word (write_word_st0),
+            .word_idx   (word_idx_st0),
+            .write_byteen(byteen_st0),
+            .way_idx_r  (way_idx_st1),
+            // outputs
+            .read_data  (read_data_st1),
+            .evict_byteen(evict_byteen_st1)
+        );
+    end
 
     // only allocate MSHR entries for non-replay core requests
     wire mshr_allocate_st0 = valid_st0 && is_creq_st0 && ~is_replay_st0;

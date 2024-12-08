@@ -461,11 +461,11 @@ module VX_cache_bank #(
     
     if (FLAGS_WIDTH > 0) begin : g_dcache
 `ifdef UNIFIED_LMEM
-        wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] lmem_line_idx_st0;
-        assign lmem_line_idx_st0 = addr_st0[`CS_LMEM_LINE_SEL_BITS-1:0] + `CS_LMEM_LINE_SEL_BITS'`CS_LMEM_BASE_OFFSET;
-        wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] line_idx_data;
-        // we need to expand the line_idx_st0 since it only handles the dcache
-        assign line_idx_data = (is_local_mem) ? lmem_line_idx_st0 : {{1'b0},{line_idx_st0}};
+    wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] lmem_line_idx_st0;
+    assign lmem_line_idx_st0 = {`CS_LMEM_SEL_BITS'(`CS_LMEM_BASE_OFFSET), addr_st0[`CS_LMEM_LINE_SEL_BITS-1:0]};
+    wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] line_idx_data;
+    // we need to expand the line_idx_st0 since it only handles the dcache
+    assign line_idx_data = (is_local_mem) ? lmem_line_idx_st0 : {{`CS_LMEM_SEL_BITS{1'b0}}, line_idx_st0};
 `else
         wire [`CS_LINE_SEL_BITS-1:0] line_idx_data;
         assign line_idx_data = line_idx_st0;

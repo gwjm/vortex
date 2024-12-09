@@ -130,11 +130,13 @@ module VX_cache_data #(
 
         VX_sp_ram #(
             .DATAW (NUM_WAYS * `CS_LINE_WIDTH),
-`ifdef UNIFIED_LMEM
-            .SIZE  (`CS_LINES_PER_BANK+`CS_LMEM_LINES_PER_BANK), // to increase the cache data size to contain the lmem
-`else
-            .SIZE  (`CS_LINES_PER_BANK),
-`endif
+             .SIZE  (
+                `ifdef UNIFIED_LMEM
+                        `CS_LINES_PER_BANK + `CS_LMEM_LINES_PER_BANK
+                `else
+                        `CS_LINES_PER_BANK
+                `endif
+                    ), // to increase the cache data size to contain the lmem
             .WRENW (NUM_WAYS * LINE_SIZE),
             .OUT_REG (1),
             .RDW_MODE ("R")

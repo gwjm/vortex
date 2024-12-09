@@ -122,13 +122,10 @@ module VX_cache_bank #(
 
     localparam PIPELINE_STAGES = 2;
     localparam ICACHE_SEL_BIT = `CS_LINE_SEL_BITS;
-`ifdef UNIFIED_LMEM
-    localparam DCACHE_SEL_BIT = `CS_LMEM_LINE_SEL_BITS;
-    localparam LMEM_BIT_DIFFERENCE = `CS_LMEM_LINE_SEL_BITS - `CS_LINE_SEL_BITS;
-`else
     localparam DCACHE_SEL_BIT = `CS_LINE_SEL_BITS;
-`endif 
-    // put the line select bit for the 
+    localparam LMEM_SEL_BITS = `CS_LMEM_LINE_SEL_BITS;
+    localparam UNIFIED_SEL_BITS = DCACHE_SEL_BIT + LMEM_SEL_BITS;
+    // put the line select bit for the
 
 `IGNORE_UNUSED_BEGIN
     wire [`UP(UUID_WIDTH)-1:0] req_uuid_sel, req_uuid_st0, req_uuid_st1;
@@ -460,15 +457,27 @@ module VX_cache_bank #(
 
     
     if (FLAGS_WIDTH > 0) begin : g_dcache
+    wire [UNIFIED_SEL_BITS-1:0] dcache_line_idx_data;
 `ifdef UNIFIED_LMEM
-    wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] lmem_line_idx_st0;
-    assign lmem_line_idx_st0 = {`CS_LMEM_SEL_BITS'(`CS_LMEM_BASE_OFFSET), addr_st0[`CS_LMEM_LINE_SEL_BITS-1:0]};
-    wire [`CS_UNIFIED_LINE_SEL_BITS-1:0] line_idx_data;
-    // we need to expand the line_idx_st0 since it only handles the dcache
-    assign line_idx_data = (is_local_mem) ? lmem_line_idx_st0 : {{`CS_LMEM_SEL_BITS{1'b0}}, line_idx_st0};
+    wire [UNIFIED_SEL_BITS-1:0] lmem_line_idx_st0;
+    
+    // Zero-extend both paths to match UNIFIED_SEL_BITS
+    assign lmem_line_idx_st0 = {
+        {(UNIFIED_SEL_BITS - LMEM_SEL_BITS){1'b0}},
+        addr_st0[LMEM_SEL_BITS-1:0]
+    };
+
+    assign dcache_line_idx_data = (is_local_mem) ? 
+        lmem_line_idx_st0 : 
+        {
+            {(UNIFIED_SEL_BITS - DCACHE_SEL_BIT){1'b0}},
+            line_idx_st0
+        };
 `else
-        wire [`CS_LINE_SEL_BITS-1:0] line_idx_data;
-        assign line_idx_data = line_idx_st0;
+    assign dcache_line_idx_data = {
+        {(UNIFIED_SEL_BITS - DCACHE_SEL_BIT){1'b0}},
+        line_idx_st0
+    };
 `endif
 
         VX_cache_data #(
@@ -480,7 +489,7 @@ module VX_cache_bank #(
             .WRITE_ENABLE (WRITE_ENABLE),
             .WRITEBACK    (WRITEBACK),
             .DIRTY_BYTES  (DIRTY_BYTES),
-            .LINE_SEL_BITS (DCACHE_SEL_BIT)
+            .LINE_SEL_BITS (UNIFIED_SEL_BITS)
         ) cache_data (
             .clk        (clk),
             .reset      (reset),
@@ -493,7 +502,7 @@ module VX_cache_bank #(
             .write      (do_write_st0 && ~pipe_stall),
             .evict_way  (evict_way_st0),
             .tag_matches(tag_matches_st0),
-            .line_idx   (line_idx_data),
+            .line_idx   (dcache_line_idx_data),
             .fill_data  (data_st0),
             .write_word (write_word_st0),
             .word_idx   (word_idx_st0),
